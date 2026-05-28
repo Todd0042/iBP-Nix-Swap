@@ -46,26 +46,74 @@ dotfiles/
   kde/                     ← KDE plasma config snapshots
 customizations/            ← wallpapers
 scripts/
+  first-boot.sh            ← one-shot post-GUI-install setup (calls the rest)
   swap.sh                  ← `sudo ./scripts/swap.sh <de>`
+  scaffold-gpu.sh          ← write gpu.nix (auto-detect nvidia/amd/intel)
   discover-mounts.sh       ← auto-fill mounts.nix UUIDs from blkid
+  seed-from-cachyos.sh     ← clone home from the mounted ~/CachyOS into ~/.persist
   snapshot-home.sh         ← bundle logged-in app state to a tarball
   restore-home.sh          ← unpack a snapshot into ~/.persist
 ```
 
-## First-time setup (already on NixOS)
+## First-time setup — fresh install via the GUI installer
+
+This repo is now the **primary install path** (the old ISO-based
+`iBP-Nix-Install` route hit a read-only-filesystem wall). Use the stock
+**graphical NixOS installer** to lay down a minimal system, then let this repo
+take over and clone your home back in:
+
+1. **Run the graphical NixOS installer (Calamares).** Partition your target
+   disk however you like and let it install. When it asks for a user account,
+   **create `todd` with a password you'll remember** — NixOS keeps that
+   password when the flake takes over (`mutableUsers` defaults to `true`), so
+   you won't be locked out. The bootloader / DE you pick in the installer
+   don't matter; this flake reconfigures them.
+
+2. **Reboot into the new system, clone this repo, and run one script:**
+
+   ```bash
+   mkdir -p ~/Documents/GitHub && cd ~/Documents/GitHub
+   git clone https://github.com/Todd0042/iBP-Nix-Swap.git
+   cd iBP-Nix-Swap
+   sudo ./scripts/first-boot.sh kde          # or: xfce hypr i3 …
+   ```
+
+   `first-boot.sh` does everything the old ISO installer did after
+   `nixos-install` — minus the disk surgery:
+
+   - copies the installer's `hardware-configuration.nix` into the repo
+   - scaffolds `gpu.nix` (auto-detects NVIDIA/AMD/Intel; `--gpu nvidia` to force)
+   - fills the Windows + CachyOS UUIDs in `mounts.nix` (`discover-mounts.sh`)
+   - rebuilds into your chosen DE (`swap.sh`)
+   - **clones your home state back in** — seeds `~/.persist` from the mounted
+     `~/CachyOS` by default, or from a snapshot tarball with `--restore`
+   - rebuilds again so the persist symlinks wire up, then clones the sister
+     `iBP-Nix-Install` repo alongside
+
+   Flags:
+
+   ```bash
+   sudo ./scripts/first-boot.sh kde --restore /run/media/usb/home-snapshot-*.tar.zst
+   sudo ./scripts/first-boot.sh kde --gpu nvidia      # force GPU profile
+   sudo ./scripts/first-boot.sh kde --no-seed         # start with fresh app state
+   sudo ./scripts/first-boot.sh --auto                # no prompts, KDE, CachyOS seed
+   ```
+
+   Log out / back in afterward — Firefox, Vesktop, Claude Code, VS Code, etc.
+   are already logged in.
+
+### Manual equivalent
+
+If you'd rather drive it step by step instead of `first-boot.sh`:
 
 ```bash
 cd ~/Documents/GitHub/iBP-Nix-Swap
-
-# 1. Move/copy the installer-generated files into place
-sudo cp /etc/nixos/hardware-configuration.nix .
-# (gpu.nix — bring your existing one, or scaffold from your previous flake)
-
-# 2. Auto-discover Windows + CachyOS UUIDs and patch mounts.nix
-sudo ./scripts/discover-mounts.sh
-
-# 3. Pick a DE and rebuild
-sudo ./scripts/swap.sh kde
+sudo cp /etc/nixos/hardware-configuration.nix .   # hardware
+sudo ./scripts/scaffold-gpu.sh                    # gpu.nix (auto-detect)
+sudo ./scripts/discover-mounts.sh                 # mounts.nix UUIDs
+sudo ./scripts/swap.sh kde                         # first rebuild
+./scripts/seed-from-cachyos.sh                     # clone home from ~/CachyOS
+sudo ./scripts/swap.sh kde                         # wire persist symlinks
 ```
 
 ## Keybinds — Hyprland & i3
@@ -113,7 +161,8 @@ Workflow:
 # Before a reinstall (or just for backup):
 ./scripts/snapshot-home.sh                 # → ~/home-snapshot-2026-05-28.tar.zst
 
-# After reinstalling iBP-Nix-Install on the new disk, on the new system:
+# After a fresh GUI install, on the new system — first-boot.sh does this for
+# you when you pass --restore, or do it by hand:
 ./scripts/restore-home.sh ~/home-snapshot-2026-05-28.tar.zst
 sudo ./scripts/swap.sh kde                  # wires the persist links
 # log out / back in — all apps already logged in
